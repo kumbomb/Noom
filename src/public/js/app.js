@@ -4,93 +4,101 @@
 
 const socket = io();
 
-const welcome = document.getElementById("welcome");
-const form = welcome.querySelector("form");
-const room = document.getElementById("room");
+const myFace = document.getElementById("myFace");
+const muteBtn = document.getElementById("mute");
+const cameraBtn = document.getElementById("camera");
+const cameraSelect = document.getElementById("cameras");
 
-room.hidden = true;
+let myStream;
+let muted = false;
+let cameraOff = false;
 
-let roomName, nickname;
-
-function addMessage(message){
-    const ul = room.querySelector("ul");
-    const li = document.createElement("li");
-    li.innerText = message;
-    ul.appendChild(li);
+//모든 카메라 가져오기
+async function getCameras(){
+    try{
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cameras = devices.filter((device) => device.kind == "videoinput");
+        const currentCamera = myStream.getVideoTracks()[0];
+        //실제 카메라를 제어할 때 필요한 것은 camera.deviceId
+        cameras.forEach((camera)=>{
+            const option = document.createElement("option");
+            option.value = camera.deviceId;
+            option.innerText = camera.label;
+            if(currentCamera.label == camera.label){
+                option.selected = true;
+            }
+            cameraSelect.appendChild(option);
+        })
+    }catch(e){
+        console.log(e);
+    }
 }
 
-function handleMessageSubmit(event){
-    event.preventDefault();
-    //const input = room.querySelector("input");
-    const input =room.querySelector("#msg input");
-    const value = input.value;
-    socket.emit("new_message", value, roomName, () => {
-        addMessage(`You : ${value}`);
-    });
-    input.value ="";
+
+
+//getUserMedia 메소드를 통한 스트림 반환은 비동기적 처리이므로
+//async-await로 처리 
+async function getMedia(deviceId){
+    //제약->요청할 미디어 유형 각각에 대한 요구사항을 지정하는 객체
+    //기본 디폴트 설정은 전면카메라
+    const initialConstraints = {
+        audio: true,
+        video: { facingMode : "user" }
+    };
+    const cameraConstraints = {
+        audio: true,
+        video: {deviceId: {exact: deviceId}}
+    };
+    
+    try{
+        myStream = await navigator.mediaDevices.getUserMedia(
+           deviceId ? cameraConstraints: initialConstraints
+        );
+        //스트림으로 받아온 영상을 myFace에 넣는다
+        myFace.srcObject = myStream;
+        //select에서 선택할 때마다 반복해서 메뉴 추가되던 현상 해결
+        if(!deviceId)
+            await getCameras();
+    } catch(e){
+        console.log(e);
+    }
 }
 
-function handleNicknameSubmit(event){
-    event.preventDefault();
-    const input = form.querySelector("#name input");
-    const value = input.value;
-    socket.emit("nickname", value);
-    input.value = "";
+getMedia();
+
+function handleMuteClick(){
+    
+    myStream.getAudioTracks().forEach((track) => (track.enabled = !track.enabled));
+
+    if(!muted){
+        muteBtn.innerText = "Unmute";
+        muted = true;
+    }else{
+        muteBtn.innerText = "Mute";
+        muted = false;
+    }
 }
 
-function showRoom(){
-    welcome.hidden = true;
-    room.hidden= false;
-    const h3 = room.querySelector("h3");
-    h3.innerText = `Room : ${roomName}`;
-    const form = room.querySelector("form");
-    form.addEventListener("submit", handleMessageSubmit);
-    const msgForm = room.querySelector("#msg");
-    //const nameForm = room.querySelector("#name");
-    msgForm.addEventListener("submit", handleMessageSubmit);
-    //nameForm.addEventListener("submit", handleNicknameSubmit);
+function handleCameraClick(){
+
+    myStream.getVideoTracks().forEach((track) => (track.enabled = ! track.enabled));
+
+    if(!cameraOff){
+        cameraBtn.innerText = "Turn Camera On";
+        cameraOff = true;
+    }else{
+        cameraBtn.innerText = "Turn Camera Off";
+        cameraOff = false;
+    }
 }
 
-function handleRoomSubmit(event){
-    event.preventDefault();
-    const input = form.querySelector("#roomName");//formRoom.querySelector("input");
-    const inputNick = form.querySelector("#name");//formNick.querySelector("input");
-    //emit 이벤트를 발생
-    //특징 : 이벤트명을 사용자 정의 설정 가능
-    //이벤트를 통해 전송할 데이터 -> 객체가 될 수 있음
-    roomName = input.value;
-    nickname = inputNick.value;
-    socket.emit("enter_room", input.value, inputNick.value, showRoom);
-    input.value ="";
-    inputNick.value ="";
+//카메라 변경
+function handleCameraChange(){
+    await getMedia(cameraSelect.value);
 }
 
-form.addEventListener("submit", handleRoomSubmit);
 
-socket.on("welcome", (userNickname, newCount) => {
-    const h3 = room.querySelector("h3");
-    h3.innerText = `Room [${roomName} : ${newCount}]`;
-    addMessage(`${userNickname} arrived!`);
-});
-
-socket.on("bye", (userNickname) => {
-    const h3 = room.querySelector("h3");
-    h3.innerText = `Room [${roomName} : ${newCount}]`;
-    addMessage(`${userNickname} left~`);
-});
-
-socket.on("new_message", (msg) =>{
-    addMessage(msg);
-});
-
-socket.on("room_change", (rooms)=>{
-    const roomList = welcome.querySelector("ul");
-    roomList.innerHTML ="";
-    if(rooms.length == 0)
-        return;
-    rooms.forEach((room) => {
-        const li = document.createElement("li");
-        li.innerText = room;
-        roomList.append(li);
-    });
-});
+muteBtn.addEventListener("click", handleMuteClick);
+cameraBtn.addEventListener("click", handleCameraClick);
+//input => 입력값이 변경될때 동작
+cameraSelect.addEventListner("input", handleCameraChange);
