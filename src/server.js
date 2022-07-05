@@ -1,5 +1,6 @@
 import http from "http";
-import SocketIO from "socket.io";
+import {Server} from "socket.io";
+import { instrument } from "@socket.io/admin-ui";
 import express from "express";
 
 const app = express ();
@@ -14,11 +15,62 @@ app.get("/*", (req, res) => res.redirect("/"));
 //app.listen(3000, handleListen);
 
 const httpServer = http.createServer(app);
-const wsServer = SocketIO(httpServer);
+
+const wsServer = new Server(httpServer, {
+    cors:{
+        //데모 주소
+        origin: ["https://admin.socket.io"],
+        credentials: true
+    }
+});
+
+instrument(wsServer, {
+    auth: false
+});
+
+//공용 채팅룸 이름 얻어오기
+function publicRooms(){
+    //연결된 소켓 id들 가져오고
+    //const sids = wsServer.sockets.adapter.sids;
+    //만들어져 있는 채팅 룸들 가져오고
+    //const rooms = wsServer.sockets.adapter.rooms;
+    //아래는 구조 분해 할당 
+    const {
+        sockets:{
+            adapter:{sids,rooms},
+        },
+    } = wsServer;
+    
+    const publicRooms = [];
+    //rooms의 key중에서 sids의 어떤 키와도 일치하지 않는 것들을 publicRooms 배열에 추가
+    //sids의 키와 일치하지 않는다 = 공용 채팅방이다 
+    //배열의 forEach는 호출할때마다 인덱스번호와 배열의 요소를 인자로 전달
+    //Map의 forEach는 호출할때마다 value, key를 인자로 전달
+    //우리는 key만 사용하니까 아래처럼 변경
+    //rooms.forEach( (value, key) => {
+    rooms.forEach( (_, key) => {
+        if(sids.get(key) == undefined){
+            publicRooms.push(key)
+        }
+    })
+    return publicRooms;
+}
+
+//채팅룸 인원 얻기
+function countRoom(roomName){
+    // ? 연산자로 채팅룸이 있을때만 size를 얻어온다
+    return wsServer.sockets.adapter.rooms.get(roomName)?.size;
+}
 
 wsServer.on("connection", (socket) => {
     //닉네임 입력전까지 임시 처리
     socket["nickname"] = "Anon";
+    //socket 모든 이벤트 핸들러 등록
+    socket.onAny( (event) =>{
+        console.log(wsServer.sockets.adapter);
+        console.log(`Socket Event: ${event}`);
+    });
+
 
     //on은 이벤트핸들링 메서드
     //socket.on("enter_room", (roomName) => console.log(roomName));
@@ -31,14 +83,19 @@ wsServer.on("connection", (socket) => {
         //이벤트명은 welcome
         //socket.to(roomName).emit("welcome");
         //emit으로 welcome 함수에 nickname 전달
-        socket.to(roomName).emit("welcome", socket.nickname);
+        socket.to(roomName).emit("welcome", socket.nickname, countRoom(roomName));
+        //publicRooms()에서 반환되는 모든 채팅룸의 배열
+        wsServer.sockets.emit("room_change", publicRooms());
     });
 
+    //연결이 완전히 해제되기 직전 발생하는 이벤트
     socket.on("disconnecting", () => {
-        //socket.rooms.forEach(room => socket.to(room).emit("bye"));
-        //emit으로 welcome 함수에 nickname 전달
         socket.rooms.forEach( (room) => 
-            socket.to(room).emit("bye", socket.nickname));
+            socket.to(room).emit("bye", socket.nickname, countRoom(room)-1));
+    });
+    //연결이 완전히 해제되었을때 발생하는 이벤트
+    socket.on("disconnect", () => {
+        wsServer.sockets.emit("room_change", publicRooms());
     });
 
     socket.on("new_message", (msg, room, done) =>{
@@ -50,37 +107,6 @@ wsServer.on("connection", (socket) => {
     
     //socket.on("nickname", (nickname) => (socket["nickname"] = nickname));
 });
-
-
-// //원래라면 누가 메세지를 보내는지 파악하고 처리해야되는데 (db)
-// //그게 안되니까 임시 디비처리
-// const sockets = [];
-
-// wss.on("connection", (socket) => {
-//     //console.log(socket);
-//     sockets.push(socket);
-
-//     //이름 없으면 익명으로
-//     socket["nickname"] = "Anonymous"    
-
-//     console.log("Connected to Browser");
-//     socket.on("close", () => console.log("Disconnected from Browser"));
-
-//     socket.on("message", (msg) => {
-//         const message = JSON.parse(msg);
-//         // console.log(message.type, message.payload);
-//         // sockets.forEach(aSocket => aSocket.send(`${message}`));
-//         switch(message.type){
-//             case "new_message":
-//                 // sockets.forEach(aSocket => aSocket.send(`${message.payload}`));
-//                 sockets.forEach(aSocket => aSocket.send(`${socket.nickname} : ${message.payload}`));
-//                 break;
-//             case "nickname":
-//                 socket["nickname"] = message.payload;
-//                 break;
-//         }
-//     });
-// })
 
 const handleListen = () => console.log("Listening on http://localhost:3000");
 httpServer.listen(3000, handleListen);
