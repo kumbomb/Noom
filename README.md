@@ -1,2 +1,3 @@
-# Noom ( Zoom Clone Coding Challenge)
-Nomadcoder's zoom clone coding challenge
+# Zoom Clone Coding
+
+Zoom Clone Coding using Node.js, WebRTC and Websockets
