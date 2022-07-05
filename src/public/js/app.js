@@ -22,6 +22,8 @@ let cameraOff = false;
 let roomName;
 //연결객체
 let myPeerConnection;
+//데이터채널
+let myDataChannel;
 
 //모든 카메라 가져오기
 async function getCameras(){
@@ -141,12 +143,29 @@ welcomeForm.addEventListener("submit", handleWelcomeSubmit);
 
 //offer를 보내는 쪽에서 이벤트 핸들링
 socket.on("welcome", async ()=>{
+
+    //offer를 보내는 쪽이 데이터채널의 생성 주체
+    myDataChannel = myPeerConnection.createDataChannel("chat");
+    myDataChannel.addEventListener("message", (event) => {
+        console.log(event);
+    });
+    console.log("made data channel");
+
     const offer = await myPeerConnection.createOffer();
     myPeerConnection.setLocalDescription(offer);    
     socket.emit("offer", offer, roomName);
 })
 //offer를 받는 쪽에서 이벤트 핸들링
 socket.on("offer", async(offer) => {
+
+    //데이터 채널 생성 감지
+    myPeerConnection.addEventListener("dataChannel", (event) =>{
+        myDataChannel = event.channel;
+        myDataChannel.addEventListener("message",(event)=>{
+            console.log(event);
+        })
+    })
+
     myPeerConnection.setRemoteDescription(offer);
     const answer = await myPeerConnection.createAnswer();
     myPeerConnection.setLocalDescription(answer);
